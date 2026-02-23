@@ -1,0 +1,7 @@
+/.*
+!/.gitignore
+!/.github/
+
+/dist/
+/pdm.lock
+__pycache__/

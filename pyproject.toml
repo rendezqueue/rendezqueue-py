@@ -1,0 +1,50 @@
+[project]
+name = "rendezqueue"
+version = "0.0.0"
+description = "Client and server for a rendezqueue service that just swaps values."
+license = { text = "0BSD" }
+
+authors = [
+  { name = "Alex Klinkhamer", email = "about.rendezqueue@grencez.dev" }
+]
+dependencies = [
+    "sxpb @ git+https://github.com/sxproto/sxpb-py@1a270175d69e58975ba231fa276d27b9d28c00d1",
+]
+readme = "README.md"
+requires-python = ">=3.9"
+
+[project.urls]
+Homepage = "https://github.com/rendezqueue/rendezqueue-py"
+Repository = "https://github.com/rendezqueue/rendezqueue-py"
+Issues = "https://github.com/rendezqueue/rendezqueue-py/issues"
+
+[build-system]
+requires = ["pdm-backend"]
+build-backend = "pdm.backend"
+
+[tool.pytest.ini_options]
+addopts = "-v"
+pythonpath = ["src", "test"]
+testpaths = ["test"]
+
+[project.scripts]
+
+[tool.pdm]
+package-dir = "src"
+
+[tool.pdm.dev-dependencies]
+dev = [
+  "pytest",
+  "ruff",
+  "ty",
+]
+
+[tool.pdm.scripts]
+check-format = "ruff check"
+check-type = "ty check"
+tidy = "ruff format"
+lint = {composite = ["check-format", "check-type"]}
+test = "pytest"
+
+[tool.ty.environment]
+root = ["src", "test"]
