@@ -5,14 +5,6 @@ from rendezqueue.impl import RendezqueueImpl
 from typing import Any, Dict, List, cast
 
 
-def normalize_list(obj: Any) -> List[Any]:
-    if obj is None:
-        return []
-    if isinstance(obj, list):
-        return obj
-    return [obj]
-
-
 class TestServerSxPB(unittest.TestCase):
     def test_sxpb_cases(self):
         sxpb_path = os.path.join(os.path.dirname(__file__), "server_test_cases.sxpb")
@@ -32,8 +24,7 @@ class TestServerSxPB(unittest.TestCase):
             # Setup phase
             setup_block = case.get("setup", {})
             if setup_block:
-                setup_requests = normalize_list(setup_block.get("request"))
-                for req in setup_requests:
+                for req in cast(List[Dict[str, Any]], setup_block.get("requests", [])):
                     self._run_request(impl, req, now_ms)
 
             # Request phase
@@ -79,7 +70,7 @@ class TestServerSxPB(unittest.TestCase):
             msg["b64"] = req["b64"]
 
         if "values" in req:
-            msg["values"] = normalize_list(req["values"])
+            msg["values"] = req["values"]
 
         return impl.tryswap(msg, now_ms=now_ms)
 
@@ -109,9 +100,8 @@ class TestServerSxPB(unittest.TestCase):
             pass
 
         if "values" in expected:
-            expected_values = normalize_list(expected["values"])
             self.assertEqual(
-                actual.values, expected_values, f"Case {case_name}: Values mismatch"
+                actual.values, expected["values"], f"Case {case_name}: Values mismatch"
             )
         else:
             # Expect no values
