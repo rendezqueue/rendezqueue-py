@@ -1,0 +1,125 @@
+import unittest
+import sxpb
+import os
+from rendezqueue.impl import RendezqueueImpl
+from typing import Any, Dict, List, cast
+
+
+def normalize_list(obj: Any) -> List[Any]:
+    if obj is None:
+        return []
+    if isinstance(obj, list):
+        return obj
+    return [obj]
+
+
+class TestServerSxPB(unittest.TestCase):
+    def test_sxpb_cases(self):
+        sxpb_path = os.path.join(os.path.dirname(__file__), "server_test_cases.sxpb")
+        with open(sxpb_path, "r") as f:
+            data = f.read()
+
+        # sxpb.loads returns Any, but we know it's a list of dicts based on our file format
+        test_cases = cast(List[Dict[str, Any]], sxpb.loads(data))
+
+        for case in test_cases:
+            case_name = case.get("name", "Unknown")
+            print(f"Running test case: {case_name}")
+
+            impl = RendezqueueImpl()
+            now_ms = case.get("now_ms", 1000)
+
+            # Setup phase
+            setup_block = case.get("setup", {})
+            if setup_block:
+                setup_requests = normalize_list(setup_block.get("request"))
+                for req in setup_requests:
+                    self._run_request(impl, req, now_ms)
+
+            # Request phase
+            req = case.get("request")
+            expected_resp = case.get("response")
+            expected_error = case.get("error_code")
+
+            if req:
+                actual_resp = self._run_request(impl, req, now_ms)
+
+                if expected_error:
+                    self.assertIsInstance(
+                        actual_resp,
+                        int,
+                        f"Case {case_name}: Expected error code {expected_error}, got response object",
+                    )
+                    self.assertEqual(
+                        actual_resp,
+                        expected_error,
+                        f"Case {case_name}: Expected error code {expected_error}, got {actual_resp}",
+                    )
+                elif expected_resp:
+                    if isinstance(actual_resp, int):
+                        self.fail(
+                            f"Case {case_name}: Expected success, got error code {actual_resp}"
+                        )
+
+                    # Verify response fields
+                    self._verify_response(actual_resp, expected_resp, case_name)
+
+    def _run_request(self, impl: RendezqueueImpl, req: Dict[str, Any], now_ms: float):
+        # Construct message dict
+        msg = {}
+        if "key" in req:
+            msg["key"] = req["key"]
+        if "sid" in req:
+            msg["sid"] = req["sid"]
+        if "offset" in req:
+            msg["offset"] = req["offset"]
+        if "ttl" in req:
+            msg["ttl"] = req["ttl"]
+        if "b64" in req:
+            msg["b64"] = req["b64"]
+
+        if "values" in req:
+            msg["values"] = normalize_list(req["values"])
+
+        return impl.tryswap(msg, now_ms=now_ms)
+
+    def _verify_response(self, actual, expected, case_name):
+        # actual is TrySwapResponse dataclass
+        if "key" in expected:
+            self.assertEqual(
+                actual.key, expected["key"], f"Case {case_name}: Key mismatch"
+            )
+        if "sid" in expected:
+            self.assertEqual(
+                actual.sid, expected["sid"], f"Case {case_name}: SID mismatch"
+            )
+        if "offset" in expected:
+            self.assertEqual(
+                actual.offset, expected["offset"], f"Case {case_name}: Offset mismatch"
+            )
+
+        if "ttl" in expected:
+            self.assertEqual(
+                actual.ttl, expected["ttl"], f"Case {case_name}: TTL mismatch"
+            )
+        else:
+            # If ttl not expected, it implies it should be None or not present in JSON output?
+            # But dataclass has it. The test logic: "ttl should not be present in response when values are present"
+            # This logic is usually enforced during encoding.
+            pass
+
+        if "values" in expected:
+            expected_values = normalize_list(expected["values"])
+            self.assertEqual(
+                actual.values, expected_values, f"Case {case_name}: Values mismatch"
+            )
+        else:
+            # Expect no values
+            self.assertIsNone(
+                actual.values,
+                f"Case {case_name}: Expected no values, got {actual.values}",
+            )
+
+
+if __name__ == "__main__":
+    unittest.main()

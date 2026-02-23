@@ -28,6 +28,8 @@ pythonpath = ["src", "test"]
 testpaths = ["test"]
 
 [project.scripts]
+rendezqueue-client = "rendezqueue.cli:main"
+rendezqueue-server = "rendezqueue.server:run"
 
 [tool.pdm]
 package-dir = "src"
