@@ -8,7 +8,6 @@ authors = [
   { name = "Alex Klinkhamer", email = "about.rendezqueue@grencez.dev" }
 ]
 dependencies = [
-    "sxpb @ git+https://github.com/sxproto/sxpb-py@1a270175d69e58975ba231fa276d27b9d28c00d1",
 ]
 readme = "README.md"
 requires-python = ">=3.9"
@@ -38,6 +37,7 @@ package-dir = "src"
 dev = [
   "pytest",
   "ruff",
+  "sxpb @ git+https://github.com/sxproto/sxpb-py@04fbc53342cb7c7dd75166be955253711966f5e2",
   "ty",
 ]
 

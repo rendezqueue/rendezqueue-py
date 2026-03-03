@@ -16,6 +16,8 @@ def btoa(s: str) -> str:
 
 def atob(s: str) -> str:
     # URL-safe base64 decoding with padding added
+    # Support both regular base64 and base64url by standardizing to base64url alphabet
+    s = s.replace("+", "-").replace("/", "_")
     missing_padding = len(s) % 4
     if missing_padding:
         s += "=" * (4 - missing_padding)

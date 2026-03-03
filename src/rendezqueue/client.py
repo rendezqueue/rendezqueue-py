@@ -89,7 +89,8 @@ class RendezqueueClient:
                 # Take snapshot of queue to send
                 snapshot_queue = list(self.outgoing_queue)
                 b64_values = [
-                    base64.b64encode(v).decode("ascii") for v in snapshot_queue
+                    base64.urlsafe_b64encode(v).decode("ascii").rstrip("=")
+                    for v in snapshot_queue
                 ]
 
             request_body = {
@@ -171,7 +172,9 @@ class RendezqueueClient:
         return msg
 
     def _b64decode_padded(self, s: str) -> bytes:
+        # Support both regular base64 and base64url by standardizing to base64url alphabet
+        s = s.replace("+", "-").replace("/", "_")
         missing_padding = len(s) % 4
         if missing_padding:
             s += "=" * (4 - missing_padding)
-        return base64.b64decode(s, validate=False)
+        return base64.urlsafe_b64decode(s)

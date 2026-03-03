@@ -108,6 +108,13 @@ class TestRendezqueueClient(unittest.TestCase):
         decoded = self.client._decode_response(msg)
         self.assertEqual(decoded["values"][0], b"test padding")
 
+    def test_base64url_decoding(self):
+        # Test base64url decoding with missing padding
+        encoded = base64.urlsafe_b64encode(b"ab\xbf\x9c").decode("ascii").rstrip("=")
+        msg = {"values": [encoded], "b64": 1}
+        decoded = self.client._decode_response(msg)
+        self.assertEqual(decoded["values"][0], b"ab\xbf\x9c")
+
     @patch("urllib.request.urlopen")
     def test_defaults(self, mock_urlopen):
         # Initialize client without callbacks
