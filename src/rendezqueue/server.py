@@ -75,6 +75,8 @@ def run() -> None:
     )
     parser.add_argument("--http_path", default="/", help="Path for RPC")
     parser.add_argument("--port_filepath", help="File to write the port number to")
+    parser.add_argument("--ssl_cert", help="Path to SSL certificate")
+    parser.add_argument("--ssl_key", help="Path to SSL key")
 
     args, unknown = parser.parse_known_args()
 
@@ -87,8 +89,16 @@ def run() -> None:
         http_path=args.http_path,
     )
 
+    if args.ssl_cert:
+        import ssl
+
+        context = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
+        context.load_cert_chain(certfile=args.ssl_cert, keyfile=args.ssl_key)
+        server.socket = context.wrap_socket(server.socket, server_side=True)
+
     host, port = server.server_address[:2]
-    print(f"Server running at http://{host}:{port}{args.http_path}")
+    scheme = "https" if args.ssl_cert else "http"
+    print(f"Server running at {scheme}://{host}:{port}{args.http_path}")
 
     if args.port_filepath:
         with open(args.port_filepath, "w") as f:

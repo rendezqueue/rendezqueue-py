@@ -108,8 +108,16 @@ class RendezqueueClient:
             }
             req = urllib.request.Request(self.url, data=data, headers=headers)
 
+            context = None
+            if self.url.startswith("https://"):
+                import ssl
+
+                context = ssl._create_unverified_context()
+
             try:
-                with urllib.request.urlopen(req, timeout=10) as response:
+                with urllib.request.urlopen(
+                    req, timeout=10, context=context
+                ) as response:
                     if response.status != 200:
                         text = response.read().decode("utf-8")
                         self.on_error(

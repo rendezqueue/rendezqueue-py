@@ -47,6 +47,7 @@ check-type = "ty check"
 tidy = "ruff format"
 lint = {composite = ["check-format", "check-type"]}
 test = "pytest"
+tidytest = {composite = ["test", "tidy", "lint"]}
 
 [tool.ty.environment]
 root = ["src", "test"]
