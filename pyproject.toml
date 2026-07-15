@@ -17,37 +17,40 @@ Homepage = "https://github.com/rendezqueue/rendezqueue-py"
 Repository = "https://github.com/rendezqueue/rendezqueue-py"
 Issues = "https://github.com/rendezqueue/rendezqueue-py/issues"
 
+[project.scripts]
+rendezqueue-client = "rendezqueue.cli:main"
+rendezqueue-server = "rendezqueue.server:run"
+
 [build-system]
 requires = ["pdm-backend"]
 build-backend = "pdm.backend"
+
+[dependency-groups]
+dev = [
+  "pytest",
+  "ruff",
+  "sxpb @ git+https://github.com/sxproto/sxpb-py@aa4e1e5830483c8ba0c549f78dce38b5be9a1885",
+  "ty",
+]
+
+[tool.pdm]
+package-dir = "src"
 
 [tool.pytest.ini_options]
 addopts = "-v"
 pythonpath = ["src", "test"]
 testpaths = ["test"]
 
-[project.scripts]
-rendezqueue-client = "rendezqueue.cli:main"
-rendezqueue-server = "rendezqueue.server:run"
-
-[tool.pdm]
-package-dir = "src"
-
-[tool.pdm.dev-dependencies]
-dev = [
-  "pytest",
-  "ruff",
-  "sxpb @ git+https://github.com/sxproto/sxpb-py@04fbc53342cb7c7dd75166be955253711966f5e2",
-  "ty",
-]
-
 [tool.pdm.scripts]
 check-format = "ruff check"
 check-type = "ty check"
-tidy = "ruff format"
-lint = {composite = ["check-format", "check-type"]}
+lint-sxpb = "sxpb-lint --ignore-file .gitignore"
+tidy-python = "ruff format"
+tidy-sxpb = "sxpb-tidy --ignore-file .gitignore"
+tidy = {composite = ["tidy-python", "tidy-sxpb"]}
+lint = {composite = ["check-format", "check-type", "lint-sxpb"]}
 test = "pytest"
-tidytest = {composite = ["test", "tidy", "lint"]}
+tidytest = {composite = ["tidy", "lint", "test"]}
 
 [tool.ty.environment]
 root = ["src", "test"]
