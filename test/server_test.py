@@ -2,6 +2,7 @@ import unittest
 import sxpb
 import os
 from rendezqueue.impl import RendezqueueImpl
+from rendezqueue.swapstore import SwapStore, TrySwapResponse
 from typing import Any, Dict, List, cast
 
 
@@ -109,6 +110,33 @@ class TestServerSxPB(unittest.TestCase):
                 actual.values,
                 f"Case {case_name}: Expected no values, got {actual.values}",
             )
+
+
+class TestAccessExpiry(unittest.TestCase):
+    def test_expired_offer_is_not_swapped_when_cleanup_is_blocked(self):
+        swapstore = SwapStore()
+
+        swapstore.tryswap("blocker", "a", 0, ["live"], 0, 20)
+        swapstore.tryswap("target", "b", 0, ["stale"], 0, 1)
+
+        result = swapstore.tryswap("target", "c", 0, ["fresh"], 1000, 1)
+        self.assertIsInstance(result, TrySwapResponse)
+        assert isinstance(result, TrySwapResponse)
+        self.assertEqual(result.offset, 1)
+        self.assertEqual(result.ttl, 1)
+        self.assertIsNone(result.values)
+        self.assertEqual(swapstore.unmatched_offer_map["target"].sid, "c")
+        self.assertEqual(swapstore.unmatched_offer_map["target"].values, ["fresh"])
+
+    def test_expired_answer_is_not_returned_when_cleanup_is_blocked(self):
+        swapstore = SwapStore()
+
+        swapstore.tryswap("blocker", "a", 0, ["live"], 0, 20)
+        swapstore.tryswap("target", "b", 0, ["from-b"], 0, 1)
+        swapstore.tryswap("target", "c", 0, ["from-c"], 0, 1)
+
+        result = swapstore.tryswap("target", "b", 1, [], 1000, 1)
+        self.assertEqual(result, 404)
 
 
 if __name__ == "__main__":

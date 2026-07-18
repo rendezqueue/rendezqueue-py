@@ -103,6 +103,12 @@ class SwapStore:
 
         if answer_map:
             answer = answer_map.get(sid)
+            if answer and answer.expiry_ms <= now_ms:
+                del answer_map[sid]
+                if not answer_map:
+                    del self.swapped_answer_multimap[key]
+                    answer_map = None
+                answer = None
             if answer:
                 if SwapStore.matches_original(answer.original_values, offset, values):
                     result = TrySwapResponse(
@@ -114,7 +120,7 @@ class SwapStore:
                 return 404
 
         offer = self.unmatched_offer_map.get(key)
-        if offer and offer.expiry_ms == 0:
+        if offer and offer.expiry_ms <= now_ms:
             del self.unmatched_offer_map[key]
             offer = None
             self.expire_swapped_answers(key, now_ms)

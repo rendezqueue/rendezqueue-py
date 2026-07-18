@@ -28,16 +28,15 @@ build-backend = "pdm.backend"
 [dependency-groups]
 dev = [
   "pytest",
-  "ruff",
-  "sxpb @ git+https://github.com/sxproto/sxpb-py@aa4e1e5830483c8ba0c549f78dce38b5be9a1885",
-  "ty",
+  "ruff==0.15.22",
+  "sxpb @ git+https://github.com/sxproto/sxpb-py@75391a98928f345114d539ecab880dc292e0ea9d",
+  "ty==0.0.64",
 ]
 
 [tool.pdm]
 package-dir = "src"
 
 [tool.pytest.ini_options]
-addopts = "-v"
 pythonpath = ["src", "test"]
 testpaths = ["test"]
 
@@ -49,7 +48,7 @@ tidy-python = "ruff format"
 tidy-sxpb = "sxpb-tidy --ignore-file .gitignore"
 tidy = {composite = ["tidy-python", "tidy-sxpb"]}
 lint = {composite = ["check-format", "check-type", "lint-sxpb"]}
-test = "pytest"
+test = "pytest -q"
 tidytest = {composite = ["tidy", "lint", "test"]}
 
 [tool.ty.environment]
