@@ -19,6 +19,7 @@ Issues = "https://github.com/rendezqueue/rendezqueue-py/issues"
 
 [project.scripts]
 rendezqueue-client = "rendezqueue.cli:main"
+rendezqueue-swap = "rendezqueue.swap:main"
 rendezqueue-server = "rendezqueue.server:run"
 
 [build-system]
@@ -37,6 +38,10 @@ dev = [
 package-dir = "src"
 
 [tool.pytest.ini_options]
+addopts = [
+    "-q",
+    "--import-mode=importlib",
+]
 pythonpath = ["src", "test"]
 testpaths = ["test"]
 
@@ -48,7 +53,7 @@ tidy-python = "ruff format"
 tidy-sxpb = "sxpb-tidy --ignore-file .gitignore"
 tidy = {composite = ["tidy-python", "tidy-sxpb"]}
 lint = {composite = ["check-format", "check-type", "lint-sxpb"]}
-test = "pytest -q"
+test = "pytest"
 tidytest = {composite = ["tidy", "lint", "test"]}
 
 [tool.ty.environment]
