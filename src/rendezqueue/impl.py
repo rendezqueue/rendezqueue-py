@@ -60,6 +60,8 @@ def inplace_decode_tryswap_message(msg: Dict[str, Any]) -> str:
             msg["key"] = atob(msg["key"])
         if msg["b64"] & 2:
             msg["sid"] = atob(msg["sid"])
+            if isinstance(msg.get("ack"), str):
+                msg["ack"] = atob(msg["ack"])
         if msg["b64"] & 1:
             msg["values"] = [atob(v) for v in msg["values"]]
     except Exception:
@@ -76,6 +78,8 @@ def inplace_encode_tryswap_message(msg: Dict[str, Any]) -> None:
         msg["key"] = btoa(msg["key"])
     if msg["b64"] & 2:
         msg["sid"] = btoa(msg["sid"])
+        if isinstance(msg.get("ack"), str):
+            msg["ack"] = btoa(msg["ack"])
     if msg["b64"] & 1:
         if "values" not in msg or msg["values"] is None:
             msg["b64"] &= ~1
@@ -156,6 +160,8 @@ class RendezqueueImpl:
             "sid": result.sid,
             "offset": result.offset,
         }
+        if result.ack is not None:
+            res_dict["ack"] = result.ack
         if result.values is not None:
             res_dict["values"] = result.values
         if result.ttl is not None:

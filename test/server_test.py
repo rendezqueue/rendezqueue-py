@@ -111,6 +111,16 @@ class TestServerSxPB(unittest.TestCase):
                 f"Case {case_name}: Expected no values, got {actual.values}",
             )
 
+        if "ack" in expected:
+            self.assertEqual(
+                actual.ack, expected["ack"], f"Case {case_name}: Ack mismatch"
+            )
+        else:
+            self.assertIsNone(
+                actual.ack,
+                f"Case {case_name}: Expected no ack, got {actual.ack}",
+            )
+
 
 class TestAccessExpiry(unittest.TestCase):
     def test_expired_offer_is_not_swapped_when_cleanup_is_blocked(self):

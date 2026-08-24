@@ -14,6 +14,7 @@ class UnmatchedOffer:
 @dataclass
 class SwappedAnswer:
     original_values: List[str]
+    peer_sid: str
     values: List[str]
     expiry_ms: float
 
@@ -23,6 +24,7 @@ class TrySwapResponse:
     key: str
     sid: str
     offset: int
+    ack: Optional[str] = None
     values: Optional[List[str]] = None
     ttl: Optional[int] = None
 
@@ -112,7 +114,10 @@ class SwapStore:
             if answer:
                 if SwapStore.matches_original(answer.original_values, offset, values):
                     result = TrySwapResponse(
-                        key=key, sid=sid, offset=len(answer.original_values)
+                        key=key,
+                        sid=sid,
+                        offset=len(answer.original_values),
+                        ack=answer.peer_sid,
                     )
                     if answer.values:
                         result.values = answer.values
@@ -141,6 +146,9 @@ class SwapStore:
                 ttl=ttl,
             )
 
+        if offer.sid is None:
+            return 500  # Unexpected.
+
         if offer.sid == sid:
             original_values = offer.values or []
             if SwapStore.matches_original(original_values, offset, values):
@@ -168,6 +176,7 @@ class SwapStore:
 
         answer_map[sid] = SwappedAnswer(
             original_values=values,
+            peer_sid=offer.sid,
             values=offer.values or [],
             expiry_ms=now_ms + ttl * 1000,
         )
@@ -175,6 +184,7 @@ class SwapStore:
         if offer.sid:
             answer_map[offer.sid] = SwappedAnswer(
                 original_values=offer.values or [],
+                peer_sid=sid,
                 values=values,
                 expiry_ms=now_ms + ttl * 1000,
             )
@@ -186,5 +196,6 @@ class SwapStore:
             key=key,
             sid=sid,
             offset=len(values),
+            ack=offer.sid,
             values=offer.values,
         )
