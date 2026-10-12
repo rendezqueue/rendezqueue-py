@@ -28,6 +28,12 @@ class TrySwapResponse:
     values: Optional[List[str]] = None
     ttl: Optional[int] = None
 
+    def __post_init__(self) -> None:
+        if not self.values:
+            self.values = None
+        if self.ttl == 0:
+            self.ttl = None
+
 
 class SwapStore:
     def __init__(self) -> None:
@@ -113,15 +119,13 @@ class SwapStore:
                 answer = None
             if answer:
                 if SwapStore.matches_original(answer.original_values, offset, values):
-                    result = TrySwapResponse(
+                    return TrySwapResponse(
                         key=key,
                         sid=sid,
                         offset=len(answer.original_values),
                         ack=answer.peer_sid,
+                        values=answer.values,
                     )
-                    if answer.values:
-                        result.values = answer.values
-                    return result
                 return 404
 
         offer = self.unmatched_offer_map.get(key)
