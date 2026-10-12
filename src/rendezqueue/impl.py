@@ -124,7 +124,7 @@ class RendezqueueImpl:
             return 413
 
         if now_ms is None:
-            now_ms = time.time() * 1000
+            now_ms = time.monotonic() * 1000
             if now_ms == 0:
                 return 500
             now_ms = int(now_ms)

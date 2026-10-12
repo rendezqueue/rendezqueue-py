@@ -1,4 +1,5 @@
 import unittest
+from unittest.mock import patch
 import sxpb
 import os
 from rendezqueue.impl import RendezqueueImpl
@@ -123,6 +124,24 @@ class TestServerSxPB(unittest.TestCase):
 
 
 class TestAccessExpiry(unittest.TestCase):
+    def test_expiry_uses_monotonic_time(self):
+        impl = RendezqueueImpl()
+        with patch("rendezqueue.impl.time") as clock:
+            clock.time.side_effect = AssertionError("Expiry must not use wall time")
+            clock.monotonic.side_effect = [10.25, 11.25]
+            result = impl.tryswap(
+                {"key": "room", "sid": "A", "values": ["a"], "ttl": 1}
+            )
+            self.assertIsInstance(result, TrySwapResponse)
+            self.assertEqual(
+                impl.swapstore.unmatched_offer_map["room"].expiry_ms, 11250
+            )
+            self.assertEqual(
+                impl.tryswap({"key": "room", "sid": "A", "offset": 1}), 404
+            )
+            self.assertEqual(clock.monotonic.call_count, 2)
+            clock.time.assert_not_called()
+
     def test_expired_offer_is_not_swapped_when_cleanup_is_blocked(self):
         swapstore = SwapStore()
 
