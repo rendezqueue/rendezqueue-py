@@ -52,7 +52,9 @@ def inplace_decode_tryswap_message(msg: Dict[str, Any]) -> str:
 
     if "values" not in msg:
         msg["values"] = []
-    elif not isinstance(msg["values"], list):
+    elif not isinstance(msg["values"], list) or not all(
+        isinstance(value, str) for value in msg["values"]
+    ):
         return "values"
 
     try:
