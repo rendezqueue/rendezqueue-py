@@ -1,6 +1,7 @@
 import json
 import base64
 import time
+import threading
 from typing import Optional, Union, Any, Dict
 from rendezqueue.swapstore import SwapStore, TrySwapResponse
 
@@ -101,6 +102,7 @@ def inplace_encode_tryswap_message(msg: Dict[str, Any]) -> None:
 class RendezqueueImpl:
     def __init__(self) -> None:
         self.swapstore = SwapStore()
+        self._lock = threading.Lock()
 
     def tryswap(
         self, msg: Any, now_ms: Optional[float] = None
@@ -125,20 +127,22 @@ class RendezqueueImpl:
         if total_value_bytes > MAX_VALUE_BYTES:
             return 413
 
-        if now_ms is None:
-            now_ms = time.monotonic() * 1000
-            if now_ms == 0:
-                return 500
-            now_ms = int(now_ms)
+        # Sample the clock under the same lock as the store transition.
+        with self._lock:
+            if now_ms is None:
+                now_ms = time.monotonic() * 1000
+                if now_ms == 0:
+                    return 500
+                now_ms = int(now_ms)
 
-        result = self.swapstore.tryswap(
-            key,
-            sid,
-            offset,
-            values,
-            now_ms,
-            msg.get("ttl", 0),
-        )
+            result = self.swapstore.tryswap(
+                key,
+                sid,
+                offset,
+                values,
+                now_ms,
+                msg.get("ttl", 0),
+            )
 
         return result
 
