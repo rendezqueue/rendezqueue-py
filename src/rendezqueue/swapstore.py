@@ -1,5 +1,5 @@
 from dataclasses import dataclass, field
-from typing import Dict, List, Optional, Union
+from typing import Dict, List, Optional, Union, cast
 
 MAX_TTL_SECONDS = 20
 
@@ -9,6 +9,7 @@ class UnmatchedOffer:
     expiry_ms: float
     sid: Optional[str] = None
     values: List[str] = field(default_factory=list)
+    ack: str = ""
 
 
 @dataclass
@@ -16,6 +17,7 @@ class SwappedAnswer:
     original_values: List[str]
     peer_sid: str
     values: List[str]
+    peer_acked: bool
     expiry_ms: float
 
 
@@ -91,11 +93,33 @@ class SwapStore:
                 return False
         return True
 
+    @staticmethod
+    def matches_ack_payload(
+        original_values: List[str], offset: int, values: List[str]
+    ) -> bool:
+        return (offset == 0 and values == original_values) or (
+            not values and offset == len(original_values)
+        )
+
+    def _forget_pair(self, key: str, sid: str, peer_sid: str, now_ms: float) -> bool:
+        answer_map = self.swapped_answer_multimap.get(key)
+        if answer_map is None:
+            return True
+        peer = answer_map.get(peer_sid)
+        if peer is not None and peer.expiry_ms > now_ms and peer.peer_sid != sid:
+            return False
+        answer_map.pop(sid, None)
+        answer_map.pop(peer_sid, None)
+        if not answer_map:
+            del self.swapped_answer_multimap[key]
+        return True
+
     def tryswap(
         self,
         key: str,
         sid: str,
         offset: int,
+        ack: str,
         values: List[str],
         now_ms: float,
         ttl: int = 0,
@@ -118,13 +142,29 @@ class SwapStore:
                     answer_map = None
                 answer = None
             if answer:
-                if SwapStore.matches_original(answer.original_values, offset, values):
+                if ack == "" and SwapStore.matches_original(
+                    answer.original_values, offset, values
+                ):
                     return TrySwapResponse(
                         key=key,
                         sid=sid,
                         offset=len(answer.original_values),
                         ack=answer.peer_sid,
                         values=answer.values,
+                    )
+                if ack != "" and SwapStore.matches_ack_payload(
+                    answer.original_values, offset, values
+                ):
+                    if ack != answer.peer_sid:
+                        return 404
+                    peer = cast(Dict[str, SwappedAnswer], answer_map)[ack]
+                    if peer.peer_sid == sid and peer.expiry_ms > now_ms:
+                        peer.peer_acked = True
+                    return TrySwapResponse(
+                        key=key,
+                        sid=sid,
+                        offset=len(answer.original_values),
+                        ack=sid if answer.peer_acked else answer.peer_sid,
                     )
                 return 404
 
@@ -137,12 +177,17 @@ class SwapStore:
         if not offer:
             if offset != 0:
                 return 404
-            if values:
+            if values or ack != "":
+                if ack != "" and not self._forget_pair(key, sid, ack, now_ms):
+                    return 404
                 self.unmatched_offer_map[key] = UnmatchedOffer(
                     sid=sid,
                     values=values,
+                    ack=ack,
                     expiry_ms=now_ms + ttl * 1000,
                 )
+            if ack != "":
+                return TrySwapResponse(key=key, sid=sid, ack=ack, offset=len(values))
             return TrySwapResponse(
                 key=key,
                 sid=sid,
@@ -155,6 +200,22 @@ class SwapStore:
 
         if offer.sid == sid:
             original_values = offer.values or []
+            if ack != "":
+                if not SwapStore.matches_ack_payload(original_values, offset, values):
+                    return 404
+                if offer.ack != "" and offer.ack != ack:
+                    return 404
+                if not self._forget_pair(key, sid, ack, now_ms):
+                    return 404
+                offer.ack = ack
+                return TrySwapResponse(
+                    key=key, sid=sid, ack=ack, offset=len(original_values)
+                )
+            if offer.ack != "":
+                # A legacy replay must not append to an already acknowledged payload.
+                if values != original_values:
+                    return 404
+                return TrySwapResponse(key=key, sid=sid, offset=len(values), ttl=ttl)
             if SwapStore.matches_original(original_values, offset, values):
                 new_values = original_values[:offset] + values
 
@@ -171,8 +232,18 @@ class SwapStore:
                 )
             return 404
 
-        if offset != 0:
+        if ack != "" and offset != 0:
             return 404
+        if offer.ack != "" and offer.ack != sid:
+            return 404
+        if ack == "" and offset != 0:
+            return 404
+        if ack != "":
+            if ack != offer.sid:
+                return 404
+            if not self._forget_pair(key, sid, ack, now_ms):
+                return 404
+            answer_map = self.swapped_answer_multimap.get(key)
 
         if answer_map is None:
             answer_map = {}
@@ -182,6 +253,7 @@ class SwapStore:
             original_values=values,
             peer_sid=offer.sid,
             values=offer.values or [],
+            peer_acked=offer.ack != "" and offer.ack == sid,
             expiry_ms=now_ms + ttl * 1000,
         )
 
@@ -190,16 +262,19 @@ class SwapStore:
                 original_values=offer.values or [],
                 peer_sid=sid,
                 values=values,
+                peer_acked=ack != "" and ack == offer.sid,
                 expiry_ms=now_ms + ttl * 1000,
             )
 
         del self.unmatched_offer_map[key]
         self.unmatched_offer_map[key] = UnmatchedOffer(expiry_ms=0)
+        if ack != "" and offer.ack != "" and offer.ack == sid:
+            return TrySwapResponse(key=key, sid=sid, ack=sid, offset=len(values))
 
         return TrySwapResponse(
             key=key,
             sid=sid,
             offset=len(values),
             ack=offer.sid,
-            values=offer.values,
+            values=offer.values if ack == "" else None,
         )

@@ -46,6 +46,9 @@ def inplace_decode_tryswap_message(msg: Dict[str, Any]) -> str:
     elif not isinstance(msg["sid"], str):
         return "sid"
 
+    if "ack" in msg and not isinstance(msg["ack"], str):
+        return "ack"
+
     if "offset" not in msg:
         msg["offset"] = 0
     elif not isinstance(msg["offset"], int) or msg["offset"] < 0:
@@ -120,7 +123,10 @@ class RendezqueueImpl:
 
         if len(key) > MAX_KEY_BYTES:
             return 413
-        if len(sid) > MAX_ID_BYTES:
+        if "ack" in msg and not isinstance(msg["ack"], str):
+            return 400
+        ack = msg.get("ack", "")
+        if len(sid) > MAX_ID_BYTES or len(ack) > MAX_ID_BYTES:
             return 413
 
         total_value_bytes = sum(len(v) for v in values)
@@ -139,6 +145,7 @@ class RendezqueueImpl:
                 key,
                 sid,
                 offset,
+                ack,
                 values,
                 now_ms,
                 msg.get("ttl", 0),

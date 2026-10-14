@@ -145,10 +145,10 @@ class TestAccessExpiry(unittest.TestCase):
     def test_expired_offer_is_not_swapped_when_cleanup_is_blocked(self):
         swapstore = SwapStore()
 
-        swapstore.tryswap("blocker", "a", 0, ["live"], 0, 20)
-        swapstore.tryswap("target", "b", 0, ["stale"], 0, 1)
+        swapstore.tryswap("blocker", "a", 0, "", ["live"], 0, 20)
+        swapstore.tryswap("target", "b", 0, "", ["stale"], 0, 1)
 
-        result = swapstore.tryswap("target", "c", 0, ["fresh"], 1000, 1)
+        result = swapstore.tryswap("target", "c", 0, "", ["fresh"], 1000, 1)
         self.assertIsInstance(result, TrySwapResponse)
         assert isinstance(result, TrySwapResponse)
         self.assertEqual(result.offset, 1)
@@ -160,11 +160,11 @@ class TestAccessExpiry(unittest.TestCase):
     def test_expired_answer_is_not_returned_when_cleanup_is_blocked(self):
         swapstore = SwapStore()
 
-        swapstore.tryswap("blocker", "a", 0, ["live"], 0, 20)
-        swapstore.tryswap("target", "b", 0, ["from-b"], 0, 1)
-        swapstore.tryswap("target", "c", 0, ["from-c"], 0, 1)
+        swapstore.tryswap("blocker", "a", 0, "", ["live"], 0, 20)
+        swapstore.tryswap("target", "b", 0, "", ["from-b"], 0, 1)
+        swapstore.tryswap("target", "c", 0, "", ["from-c"], 0, 1)
 
-        result = swapstore.tryswap("target", "b", 1, [], 1000, 1)
+        result = swapstore.tryswap("target", "b", 1, "", [], 1000, 1)
         self.assertEqual(result, 404)
 
 
