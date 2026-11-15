@@ -50,7 +50,11 @@ class TestValueValidation(unittest.TestCase):
 
     def test_http_rejects_bad_values_and_keeps_serving(self):
         server = RendezqueueServer(
-            ("127.0.0.1", 0), RendezqueueHandler, RendezqueueImpl()
+            ("127.0.0.1", 0),
+            RendezqueueHandler,
+            RendezqueueImpl(),
+            http_path="/plyswap",
+            tryswap_http_path="/",
         )
         thread = threading.Thread(target=server.serve_forever, daemon=True)
         thread.start()

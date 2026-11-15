@@ -2,7 +2,7 @@
 
 This wraps RendezqueueClient so a script or agent can send exactly one value,
 wait for the peer's reply, and receive it back, without managing sessions,
-offsets, or polling by hand.
+protocol generations, retained retries, or polling by hand.
 """
 
 import argparse
@@ -19,7 +19,7 @@ DEFAULT_POLL_INTERVAL_MS = 500
 
 def swap_once(
     url: str,
-    key: str,
+    room: str,
     value: bytes,
     timeout: float = DEFAULT_TIMEOUT_SECONDS,
     hue: Optional[str] = None,
@@ -27,9 +27,13 @@ def swap_once(
 ) -> List[bytes]:
     """Send one value and block until the peer replies (one value swap).
 
+    Returning stops this client, including its retained recovery participation.
+    The other peer can retrieve our sealed values while cached, but cache loss
+    or expiry after one side exits can prevent the other from finishing.
+
     Args:
-        url: Rendezqueue server URL.
-        key: Room key (bearer rendezvous selector, not authentication).
+        url: Full PlySwap endpoint URL.
+        room: Bearer rendezvous selector, not authentication.
         value: The single value to send.
         timeout: Seconds to wait for a reply.
         hue: Client identifier prefix; a default is used when omitted.
@@ -43,8 +47,8 @@ def swap_once(
 
     Raises:
         TimeoutError: No reply arrived within `timeout` seconds. The caller
-            owns any retry (the 2026-08-15 ruling: 404 delivery is ambiguous
-            and is not auto-replayed).
+            owns any application-level retry; an error or timeout never
+            proves nondelivery. Protocol retries retain the original snapshots.
     """
     reply: List[bytes] = []
     last_error: List[str] = []
@@ -56,23 +60,22 @@ def swap_once(
             done.set()
 
     def on_error(e: Exception) -> None:
-        # Record but keep waiting: a transient network error recovers on the
-        # next poll. A wedged 404 session simply never delivers, so the
-        # timeout fires and the caller can retry.
+        # Keep waiting through explicit retained protocol retries. Never
+        # convert a 404/timeout into a fresh application-level resend.
         last_error.append(str(e))
 
     client = RendezqueueClient(
         url=url,
-        key=key,
+        room=room,
         hue=hue or "swap",
         on_data=on_data,
         on_error=on_error,
         poll_interval_ms=poll_interval_ms,
     )
 
-    # Send before start so the first poll already carries the value; the raw
-    # client polls once immediately on start(), which would otherwise race
-    # ahead of this send with an empty queue.
+    # Queue before scheduling. OPEN carries no data; the retained core freezes
+    # this batch only after discovery binds a peer. Stopping after our receipt
+    # ends recovery participation: the peer may still need its cached answer.
     client.send(value)
     client.start()
     try:
@@ -88,8 +91,8 @@ def main() -> None:
     parser = argparse.ArgumentParser(
         prog="rendezqueue-swap", description="Rendezqueue one-shot value swap"
     )
-    parser.add_argument("--url", required=True, help="URL of the Rendezqueue server")
-    parser.add_argument("--key", required=True, help="Room key")
+    parser.add_argument("--url", required=True, help="Full PlySwap endpoint URL")
+    parser.add_argument("--room", required=True, help="Room")
     parser.add_argument(
         "--value",
         default=None,
@@ -121,7 +124,7 @@ def main() -> None:
     try:
         reply = swap_once(
             url=args.url,
-            key=args.key,
+            room=args.room,
             value=value,
             timeout=args.timeout,
             hue=args.hue,

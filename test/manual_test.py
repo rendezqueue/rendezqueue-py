@@ -1,12 +1,12 @@
+import argparse
 import threading
 import time
 import sys
 from rendezqueue import RendezqueueClient
 
 
-def manual_test():
-    url = "https://rendezqueue.com/tryswap"
-    key = "manual-test-key-" + str(int(time.time()))
+def manual_test(url: str):
+    room = "manual-test-key-" + str(int(time.time()))
 
     received_event1 = threading.Event()
     received_event2 = threading.Event()
@@ -24,7 +24,7 @@ def manual_test():
 
     client1 = RendezqueueClient(
         url=url,
-        key=key,
+        room=room,
         hue="test-hue-1",
         on_data=on_data1,
         on_error=on_error,
@@ -33,14 +33,14 @@ def manual_test():
 
     client2 = RendezqueueClient(
         url=url,
-        key=key,
+        room=room,
         hue="test-hue-2",
         on_data=on_data2,
         on_error=on_error,
         poll_interval_ms=1000,
     )
 
-    print(f"Starting clients with key={key}")
+    print(f"Starting clients with room={room}")
     client1.start()
     client2.start()
 
@@ -75,4 +75,6 @@ def manual_test():
 
 
 if __name__ == "__main__":
-    manual_test()
+    parser = argparse.ArgumentParser(description="Manual PlySwap client exchange")
+    parser.add_argument("--url", required=True, help="Full PlySwap endpoint URL")
+    manual_test(parser.parse_args().url)

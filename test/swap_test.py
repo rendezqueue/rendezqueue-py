@@ -29,8 +29,6 @@ class SwapTest(unittest.TestCase):
                 "127.0.0.1",
                 "--http_port",
                 "0",
-                "--http_path",
-                "/tryswap",
                 "--port_filepath",
                 cls.port_filepath,
             ],
@@ -55,15 +53,15 @@ class SwapTest(unittest.TestCase):
             os.remove(cls.port_filepath)
 
     def test_swap_once(self):
-        url = f"http://127.0.0.1:{self.port}/tryswap"
-        key = "swap-test-key"
+        url = f"http://127.0.0.1:{self.port}/"
+        room = "swap-test-key"
         results: Dict[str, List[bytes]] = {}
 
         def a() -> None:
-            results["a"] = swap_once(url=url, key=key, value=b"from-a", timeout=5)
+            results["a"] = swap_once(url=url, room=room, value=b"from-a", timeout=5)
 
         def b() -> None:
-            results["b"] = swap_once(url=url, key=key, value=b"from-b", timeout=5)
+            results["b"] = swap_once(url=url, room=room, value=b"from-b", timeout=5)
 
         ta = threading.Thread(target=a)
         tb = threading.Thread(target=b)
@@ -78,10 +76,10 @@ class SwapTest(unittest.TestCase):
         self.assertEqual(results["b"], [b"from-a"])
 
     def test_swap_once_timeout(self):
-        url = f"http://127.0.0.1:{self.port}/tryswap"
-        key = "swap-timeout-key"
+        url = f"http://127.0.0.1:{self.port}/"
+        room = "swap-timeout-key"
         with self.assertRaises(TimeoutError):
-            swap_once(url=url, key=key, value=b"lonely", timeout=1.0)
+            swap_once(url=url, room=room, value=b"lonely", timeout=1.0)
 
 
 if __name__ == "__main__":

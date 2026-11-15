@@ -30,7 +30,7 @@ build-backend = "pdm.backend"
 dev = [
   "pytest",
   "ruff==0.15.22",
-  "sxpb @ git+https://github.com/sxproto/sxpb-py@75391a98928f345114d539ecab880dc292e0ea9d",
+  "sxpb @ git+https://github.com/sxproto/sxpb-py@c13d27a8fdc582d5d4175aad43f8781c84f2d883",
   "ty==0.0.64",
 ]
 

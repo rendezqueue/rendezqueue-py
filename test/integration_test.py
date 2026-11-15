@@ -30,8 +30,6 @@ class IntegrationTest(unittest.TestCase):
                 "127.0.0.1",
                 "--http_port",
                 "0",
-                "--http_path",
-                "/tryswap",
                 "--port_filepath",
                 cls.port_filepath,
             ],
@@ -58,8 +56,8 @@ class IntegrationTest(unittest.TestCase):
             os.remove(cls.port_filepath)
 
     def test_client_swap(self):
-        url = f"http://127.0.0.1:{self.port}/tryswap"
-        key = "test-key-integration"
+        url = f"http://127.0.0.1:{self.port}/"
+        room = "test-key-integration"
         hue = "test-hue"
 
         received_s1 = []
@@ -72,10 +70,10 @@ class IntegrationTest(unittest.TestCase):
             received_s2.extend(values)
 
         client1 = RendezqueueClient(
-            url=url, key=key, hue=hue, on_data=on_data_s1, poll_interval_ms=100
+            url=url, room=room, hue=hue, on_data=on_data_s1, poll_interval_ms=100
         )
         client2 = RendezqueueClient(
-            url=url, key=key, hue=hue, on_data=on_data_s2, poll_interval_ms=100
+            url=url, room=room, hue=hue, on_data=on_data_s2, poll_interval_ms=100
         )
 
         try:
