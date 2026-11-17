@@ -47,12 +47,12 @@ class RunningTransport(Transport):
         assert client.test_idle.wait(5), "scheduler did not reach its paced wait"
         with client.lock:
             assert not client.is_polling and client._run is not None
-            assert client._run.deadline > time.monotonic()
+            assert client._run.next_poll_time > time.monotonic()
 
     def tick(self, client):
         with client._condition:
             client.test_idle.clear()
-            client._run.deadline = time.monotonic()
+            client._run.next_poll_time = time.monotonic()
             client._condition.notify_all()
         self.idle(client)
 
@@ -198,7 +198,131 @@ def test_body_decode_guard_survives_competing_polls_and_stop_restart(
     assert a.outgoing_queue == [b"tail"]
     f.after = lambda request, response: response
     f.tick(a)
-    assert len(f.requests) == before + 2
+    assert any(request.values == (b"tail",) for request in f.requests[before + 1 :])
+    assert ar == [[b"b"]] and ac == [True] and not errors
+
+
+def test_discovery_receipt_and_callback_reply_drain_before_idle(running):
+    f = running
+    a, received, _, errors = f.client("a")
+    b, _, completed, peer_errors = f.client("b")
+    b._poll()
+    a._poll()
+    a.send(b"request")
+    a._poll()
+    b.on_data = lambda values: b.send(b"response")
+    before = len(f.requests)
+    f.start(b)
+    f.idle(b)
+    assert any(request.values == (b"response",) for request in f.requests[before:])
+    for _ in range(4):
+        a._poll()
+    assert [value for batch in received for value in batch] == [b"response"]
+    assert completed == [True] and not errors and not peer_errors
+
+
+@pytest.mark.parametrize("during_io", [False, True])
+def test_new_input_wakes_idle_or_finishing_empty_rpc(running, during_io):
+    f = running
+    a, _, _, errors = f.client("a")
+    b, _, _, _ = f.client("b")
+    opening(a, b)
+    entered, release = threading.Event(), f.gate()
+
+    def held(request, response):
+        entered.set()
+        assert release.wait(5)
+        return response
+
+    if during_io:
+        f.after = held
+    f.start(a)
+    if during_io:
+        assert entered.wait(5)
+    else:
+        f.idle(a)
+        a.test_idle.clear()
+    before = len(f.requests)
+    a.send(b"fresh input")
+    release.set()
+    f.idle(a)
+    assert any(p.values == (b"fresh input",) for p in f.requests[before:])
+    assert not errors
+    next_poll_time = a._run.next_poll_time
+    a.send(b"behind frozen batch")
+    assert a._run.next_poll_time == next_poll_time
+    assert a.outgoing_queue == [b"fresh input", b"behind frozen batch"]
+
+
+def test_new_input_cannot_shorten_error_backoff(running):
+    f = running
+    a, _, _, errors = f.client("a")
+    b, _, _, _ = f.client("b")
+    opening(a, b)
+    f.after = lambda request, response: Response(b"unavailable", 503)
+    f.start(a)
+    f.idle(a)
+    next_poll_time = a._run.next_poll_time
+    before = len(f.requests)
+    a.send(b"fresh input")
+    assert a._run.next_poll_time == next_poll_time
+    assert a._core.batch is None and len(f.requests) == before
+    f.after = lambda request, response: response
+    f.tick(a)
+    assert any(p.values == (b"fresh input",) for p in f.requests[before:])
+    assert len(errors) == 1
+
+
+def test_reference_repair_precedes_input_queued_during_io(running):
+    from rendezqueue.plyswap_cache import PlySwapCache
+
+    f = running
+    (a, _, _, errors), _ = ready_completion(f)
+    f.start(a)
+    f.idle(a)
+    f.server = PlySwapCache(clock=lambda: 0)
+    entered, release = threading.Event(), f.gate()
+
+    def held(request, response):
+        if request.is_reference():
+            entered.set()
+            assert release.wait(5)
+        return response
+
+    f.after = held
+    before = len(f.requests)
+    worker = f.fork(lambda: f.tick(a))
+    assert entered.wait(5)
+    a.send(b"fresh input")
+    release.set()
+    worker.join(5)
+    assert not worker.is_alive()
+    f.idle(a)
+    requests = f.requests[before:]
+    assert requests[0].is_reference()
+    assert requests[1].self_xid == requests[0].self_xid
+    assert requests[1].values == (b"a",)
+    assert requests[2].values == (b"fresh input",)
+    assert not errors
+
+
+def test_full_completion_publishes_successor_without_resealing_predecessor(running):
+    f = running
+    (a, received, completed, errors), _ = ready_completion(f)
+    predecessor = a._core.self_xid
+
+    def respond(values):
+        received.append(values)
+        a.send(b"tail")
+
+    a.on_data = respond
+    before = len(f.requests)
+    f.start(a)
+    f.idle(a)
+    successor = f.requests[before + 1]
+    assert successor.self_xid != predecessor
+    assert successor.values == (b"tail",)
+    assert received == [[b"b"]] and completed == [True] and not errors
 
 
 def test_stop_during_owned_io_still_accepts_valid_receipt(running):
@@ -251,13 +375,17 @@ def test_current_previous_alternate_even_with_continuous_input_and_errors(runnin
     old_self_xid = a._core.previous.self_xid
     new_self_xid = a._core.self_xid
     f.after = lambda request, response: Response(b"unavailable", 503)
+    a.test_idle.clear()
+    a.send("first tail")
+    f.idle(a)
+    assert f.requests[-1].self_xid == new_self_xid
     observed = []
     for _ in range(6):
         a.send("tail")
         f.tick(a)
         observed.append(f.requests[-1].self_xid)
     assert observed == [old_self_xid, new_self_xid] * 3
-    assert len(errors) == 6
+    assert len(errors) == 7
 
 
 def test_error_observer_restart_and_exception_do_not_spin(running):

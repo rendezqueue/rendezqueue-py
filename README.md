@@ -45,6 +45,10 @@ Python uses `room`, `self_xid`, `peer_xid`, and `next_xid`; the XID fields are `
 Actual XIDs are nonempty bytes. Empty/omitted `peer` and `next` mean absent and encode by omission; empty bytes inside `values` remain valid data.
 Old model, SDK, and wire names are not aliases. Opt-in TrySwap retains its original format.
 
+## Client scheduling
+
+`poll_interval_ms` paces polling for peer changes and retries after failures.
+
 ## Commands that continue later
 
 Use `RendezqueueClient(..., continuable=True)` for a command that exits between turns.

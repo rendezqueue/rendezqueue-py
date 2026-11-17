@@ -17,7 +17,8 @@ logger = logging.getLogger(__name__)
 
 @dataclass(eq=False)
 class _PollRun:
-    deadline: Optional[float]
+    next_poll_time: float
+    next_retry_time: float = 0.0
 
 
 class RendezqueueClient:
@@ -27,6 +28,8 @@ class RendezqueueClient:
     future admission, not owned I/O/callbacks; start() resumes the same state.
     on_complete means local generation completion, not remote application ACK.
     Empty constructor XIDs start fresh; resuming requires a nonempty pair.
+    poll_interval_ms paces waiting for peer activity and error retries.
+    Locally ready publications and protocol follow-ups run without that delay.
     """
 
     def __init__(
@@ -64,6 +67,7 @@ class RendezqueueClient:
         self._condition = threading.Condition(self.lock)
         self._run: Optional[_PollRun] = None
         self._previous_next = False
+        self._ready_mode: Optional[Mode] = None
         self.is_polling = False
         self._poll_owner: Optional[threading.Thread] = None
         self.is_stopped = True
@@ -150,7 +154,7 @@ class RendezqueueClient:
                 raise RuntimeError("client is closed for continuation")
             if not self.is_stopped:
                 return
-            run = _PollRun(None if self.is_polling else time.monotonic())
+            run = _PollRun(time.monotonic())
             self.is_stopped = False
             self._run = run
             thread = threading.Thread(target=self._poll_loop, args=(run,), daemon=True)
@@ -173,10 +177,23 @@ class RendezqueueClient:
             value = value.encode("utf-8")
         elif not isinstance(value, bytes):
             value = memoryview(value).tobytes()
-        with self.lock:
+        with self._condition:
             if self._finishing or self._failure is not None:
                 raise RuntimeError("client is closed for continuation")
             self._core.enqueue(value)
+            run = self._run
+            if run is not None and not self.is_polling and self._input_ready():
+                run.next_poll_time = min(
+                    run.next_poll_time, max(time.monotonic(), run.next_retry_time)
+                )
+                self._condition.notify_all()
+
+    def _input_ready(self) -> bool:
+        return (
+            bool(self._core.peer_xid)
+            and self._core.batch is None
+            and bool(self._core.queued)
+        )
 
     def _poll_loop(self, owner: _PollRun) -> None:
         while True:
@@ -184,10 +201,10 @@ class RendezqueueClient:
                 while True:
                     if self._run is not owner:
                         return
-                    if self.is_polling or owner.deadline is None:
+                    if self.is_polling:
                         self._condition.wait()
                         continue
-                    delay = owner.deadline - time.monotonic()
+                    delay = owner.next_poll_time - time.monotonic()
                     if delay <= 0:
                         break
                     self._condition.wait(delay)
@@ -210,15 +227,24 @@ class RendezqueueClient:
             self.is_polling = True
             self._poll_owner = threading.current_thread()
         packet: Optional[Packet] = None
+        successful = False
         try:
             with self.lock:
-                mode: Mode = (
+                generation = self._core.generation
+                peer = self._core.peer_xid
+                confirmed = self._core.peer_confirmed
+                previous_advertised = self._core.previous_advertised
+                mode: Mode = self._ready_mode or (
                     "previous"
-                    if self._previous_next and self._core.previous is not None
+                    if (
+                        not self._input_ready()
+                        and self._previous_next
+                        and self._core.previous is not None
+                        and not (self._core.continuable and confirmed)
+                    )
                     else "current"
                 )
-                # Alternate even on errors, so old recovery cannot starve new
-                # input and continuous new input cannot starve previous EMPTY.
+                self._ready_mode = None
                 self._previous_next = mode == "current"
                 packet = self._core.send(mode)
             if packet is None:
@@ -238,6 +264,19 @@ class RendezqueueClient:
                     self._run = None
                     raise self._failure
                 completion = self._core.accept(packet, reply)
+                successful = True
+                if self._core.generation != generation:
+                    self._ready_mode = (
+                        "current" if self._core.previous_advertised else "previous"
+                    )
+                elif (not peer and self._core.peer_xid) or (
+                    not confirmed and self._core.peer_confirmed
+                ):
+                    self._ready_mode = "current"
+                elif not previous_advertised and self._core.previous_advertised:
+                    self._ready_mode = "current"
+                elif reply is None and packet.request.is_reference():
+                    self._ready_mode = mode
                 on_data, on_complete = self.on_data, self.on_complete
             if completion is not None:
                 # State commits first; callbacks run outside the state mutex,
@@ -246,13 +285,16 @@ class RendezqueueClient:
                     try:
                         on_data(list(completion.values))
                     except Exception as error:
+                        successful = False
                         self._report_error(error)
                 if on_complete is not None:
                     try:
                         on_complete()
                     except Exception as error:
+                        successful = False
                         self._report_error(error)
         except Exception as error:
+            successful = False
             with self.lock:
                 if packet is not None:
                     self._core.timeout(packet)
@@ -262,9 +304,18 @@ class RendezqueueClient:
                 self.is_polling = False
                 self._poll_owner = None
                 if self._run is not None:
-                    # A replacement run also waits an interval after old owned
-                    # I/O/callbacks finish. Error observers cannot create a spin.
-                    self._run.deadline = (
-                        time.monotonic() + self.poll_interval_ms / 1000.0
-                    )
+                    run = self._run
+                    now = time.monotonic()
+                    if not successful or run is not owner:
+                        run.next_retry_time = now + self.poll_interval_ms / 1000.0
+                        run.next_poll_time = run.next_retry_time
+                    else:
+                        run.next_retry_time = 0.0
+                        ready = self._ready_mode is not None or self._input_ready()
+                        run.next_poll_time = (
+                            now
+                            if ready
+                            and not (self._finishing and self._core.can_handoff())
+                            else now + self.poll_interval_ms / 1000.0
+                        )
                 self._condition.notify_all()

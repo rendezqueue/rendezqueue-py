@@ -43,6 +43,7 @@ class ClientState:
         self.continuable = continuable
         self.peer_confirmed = bool(peer_xid)
         self.current_advertised = False
+        self.previous_advertised = False
         self.generation = 0
         self.next_attempt = 0
         self.peer_xid = peer_xid
@@ -123,21 +124,20 @@ class ClientState:
             raise OverflowError("PlySwap attempt counter exhausted")
         if mode == "current":
             self._id(self.generation + 1)  # Check before freezing any queued input.
-            if (
-                bool(self.peer_xid)
-                and self.batch is None
-                and self.queued
-                and (not self.continuable or self.peer_confirmed)
-            ):
+            if bool(self.peer_xid) and self.batch is None and self.queued:
                 self.batch = tuple(self.queued)
                 self.queued.clear()
                 self.current_cached = False
-            # Before binding a successor, observe the exact expected peer row.
-            # Binding first would let OPEN echo our own cached peer binding, which is
-            # not evidence that the peer has consumed our previous snapshot.
+            # An empty successor stays unbound until OPEN confirms the peer.
+            # A pending FULL prevents handoff and retains the predecessor.
             request = (
                 Message(self.self_xid)
-                if self.continuable and bool(self.peer_xid) and not self.peer_confirmed
+                if (
+                    self.continuable
+                    and bool(self.peer_xid)
+                    and not self.peer_confirmed
+                    and self.batch is None
+                )
                 else self._current()
             )
         else:
@@ -232,6 +232,8 @@ class ClientState:
             return None
         if packet.request.values:
             self._set_hint(slot, True)
+        if slot == "previous":
+            self.previous_advertised = True
         if slot == "current" and bool(reply.next_xid):
             generation = self.generation + 1
             own_next = self._id(generation)
@@ -245,5 +247,6 @@ class ClientState:
             self.current_cached = False
             self.peer_confirmed = False
             self.current_advertised = False
+            self.previous_advertised = bool(request.next_xid)
             return Completion(reply.values, generation)
         return None

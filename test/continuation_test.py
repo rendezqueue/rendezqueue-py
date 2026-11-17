@@ -51,13 +51,70 @@ def test_barrier_requires_actual_peer_progress_and_retains_old_data():
 def test_wrong_open_peer_cannot_certify_or_rebind_a_successor():
     a = ClientState(b"a", continuable=True, self_xid=b"continued", peer_xid=b"peer")
     a.peer_confirmed = False
-    a.enqueue(b"tail")
     packet = a.send("current")
     assert packet is not None
     assert packet.request == Message(b"continued")
+    a.enqueue(b"tail")
     a.accept(packet, Message(b"continued", peer_xid=b"stale"))
     assert a.peer_xid == b"peer" and not a.can_handoff()
     assert a.batch is None and a.queued == [b"tail"]
+
+
+def test_successor_full_pipelines_without_certifying_handoff_or_losing_predecessor():
+    room = PlySwap()
+    a = ClientState(b"a", continuable=True)
+    b = ClientState(b"b")
+    a.enqueue(b"first")
+    b.enqueue(b"initial reply")
+    step(a, room)
+    step(b, room)
+    step(a, room)
+    step(b, room)
+    completion = step(a, room)
+    assert completion is not None and completion.values == (b"initial reply",)
+    assert not a.peer_confirmed
+    assert b.generation == 0  # B has not received the first input yet.
+    a.enqueue(b"second")
+    packet = a.send("current")
+    assert packet is not None and packet.request.values == (b"second",)
+    assert packet.request.peer_xid == a.peer_xid
+    a.accept(packet, room.serve(packet.request))
+    assert a.previous is not None and a.previous.values == (b"first",)
+    assert not a.can_handoff()
+    # Our own binding can be echoed, but it is not a certified continuation.
+    assert room.serve(Message(a.self_xid)) == Message(a.self_xid, peer_xid=a.peer_xid)
+    assert not a.can_handoff()
+
+    room = PlySwap()
+    received = []
+    replies = [b"initial reply"]
+    for _ in range(100):
+        for core in (a, b):
+            for mode in ("previous", "current"):
+                if mode == "previous" and core.previous is None:
+                    continue
+                result = step(core, room, mode)
+                if result is not None:
+                    if core is b:
+                        received.extend(result.values)
+                        for value in result.values:
+                            b.enqueue(b"reply:" + value)
+                    else:
+                        replies.extend(result.values)
+        missing = [b"first", b"second"][len(received) :]
+        if missing:
+            assert list(a.stored())[-len(missing) :] == missing
+        if (
+            received == [b"first", b"second"]
+            and replies == [b"initial reply", b"reply:first", b"reply:second"]
+            and a.can_handoff()
+        ):
+            break
+    else:
+        raise AssertionError("pipelined input did not recover after cache loss")
+    assert received == [b"first", b"second"]
+    assert replies == [b"initial reply", b"reply:first", b"reply:second"]
+    assert a.can_handoff()
 
 
 @pytest.mark.parametrize("seed", range(40))
